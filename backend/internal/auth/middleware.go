@@ -11,6 +11,9 @@ type contextKey string
 
 const userContextKey contextKey = "user_id"
 
+// UserIDKey is exported for external access to user context values.
+var UserIDKey = userContextKey
+
 func AuthMiddleware(jwtService *JWTService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

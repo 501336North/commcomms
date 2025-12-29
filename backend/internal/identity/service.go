@@ -2,10 +2,17 @@ package identity
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+// Pre-compiled regex patterns for validation (performance optimization).
+var (
+	handleRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+	emailRegex  = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 )
 
 type User struct {
@@ -98,27 +105,59 @@ func NewServiceWithTokenValidator(userRepo UserRepository, inviteRepo InviteRepo
 }
 
 func (s *Service) Register(ctx context.Context, email, password, handle, inviteCode string) (*User, error) {
-	_, err := s.inviteRepo.FindByCode(ctx, inviteCode)
+	// Validate invite code exists and is usable
+	invite, err := s.inviteRepo.FindByCode(ctx, inviteCode)
 	if err != nil {
 		return nil, ErrInvalidInviteCode
 	}
 
-	if len(password) < 8 {
-		return nil, ErrPasswordTooShort
+	// Check invite expiration
+	if time.Now().After(invite.ExpiresAt) {
+		return nil, ErrInviteExpired
 	}
 
+	// Check invite usage limit (MaxUses of 0 means unlimited)
+	if invite.MaxUses > 0 && invite.UsedCount >= invite.MaxUses {
+		return nil, ErrInviteExhausted
+	}
+
+	// Validate email format
+	if err := s.validateEmail(email); err != nil {
+		return nil, err
+	}
+
+	// Validate password strength
+	if err := s.validatePassword(password); err != nil {
+		return nil, err
+	}
+
+	// Validate handle format and length
+	if err := s.validateHandle(handle); err != nil {
+		return nil, err
+	}
+
+	// Check email uniqueness
 	existingUser, err := s.userRepo.FindByEmail(ctx, email)
 	if err == nil && existingUser != nil {
 		return nil, ErrEmailAlreadyRegistered
 	}
 
-	_, _ = s.userRepo.FindByHandle(ctx, handle)
-
-	hashedPassword, err := s.hasher.Hash(password)
+	// Check handle uniqueness
+	available, err := s.isHandleAvailable(ctx, handle)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to check handle availability: %w", err)
+	}
+	if !available {
+		return nil, ErrHandleAlreadyTaken
 	}
 
+	// Hash password
+	hashedPassword, err := s.hasher.Hash(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Create user
 	user := &User{
 		ID:           uuid.New().String(),
 		Email:        email,
@@ -128,19 +167,40 @@ func (s *Service) Register(ctx context.Context, email, password, handle, inviteC
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	_ = s.inviteRepo.IncrementUsage(ctx, inviteCode)
+	// Increment invite usage (log error but don't fail registration)
+	if err := s.inviteRepo.IncrementUsage(ctx, inviteCode); err != nil {
+		// Log this error in production - invite was used but usage not tracked
+		// This is a non-critical error since the user was already created
+	}
 
 	return user, nil
 }
 
+func (s *Service) validateEmail(email string) error {
+	if !emailRegex.MatchString(email) {
+		return ErrInvalidEmailFormat
+	}
+	return nil
+}
+
+func (s *Service) validatePassword(password string) error {
+	if len(password) < 8 {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
 func (s *Service) validateHandle(handle string) error {
+	if len(handle) < 3 {
+		return ErrHandleTooShort
+	}
 	if len(handle) > 20 {
 		return ErrHandleTooLong
 	}
-	if !regexp.MustCompile(`^[a-zA-Z0-9_]+$`).MatchString(handle) {
+	if !handleRegex.MatchString(handle) {
 		return ErrHandleInvalidChars
 	}
 	return nil
@@ -149,6 +209,7 @@ func (s *Service) validateHandle(handle string) error {
 func (s *Service) isHandleAvailable(ctx context.Context, handle string) (bool, error) {
 	_, err := s.userRepo.FindByHandle(ctx, handle)
 	if err != nil {
+		// Assume not found means available
 		return true, nil
 	}
 	return false, nil
@@ -162,8 +223,18 @@ func (s *Service) Login(ctx context.Context, email, password string) (*AuthRespo
 	if err := s.hasher.Compare(user.PasswordHash, password); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-	accessToken, _ := s.tokenGen.GenerateAccessToken(user.ID)
-	refreshToken, _ := s.tokenGen.GenerateRefreshToken(user.ID)
+
+	// Generate tokens with proper error handling
+	accessToken, err := s.tokenGen.GenerateAccessToken(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate access token: %w", err)
+	}
+
+	refreshToken, err := s.tokenGen.GenerateRefreshToken(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+
 	return &AuthResponse{AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
 
@@ -172,12 +243,30 @@ func (s *Service) RefreshTokens(ctx context.Context, refreshToken string) (*Auth
 	if err != nil {
 		return nil, err
 	}
-	revoked, _ := s.refreshTokenRepo.IsRevoked(ctx, refreshToken)
+
+	revoked, err := s.refreshTokenRepo.IsRevoked(ctx, refreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check token revocation: %w", err)
+	}
 	if revoked {
 		return nil, ErrTokenRevoked
 	}
-	_ = s.refreshTokenRepo.Revoke(ctx, refreshToken)
-	accessToken, _ := s.tokenGen.GenerateAccessToken(userID)
-	newRefreshToken, _ := s.tokenGen.GenerateRefreshToken(userID)
+
+	// Revoke old token before issuing new ones
+	if err := s.refreshTokenRepo.Revoke(ctx, refreshToken); err != nil {
+		return nil, fmt.Errorf("failed to revoke old token: %w", err)
+	}
+
+	// Generate new tokens with proper error handling
+	accessToken, err := s.tokenGen.GenerateAccessToken(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate access token: %w", err)
+	}
+
+	newRefreshToken, err := s.tokenGen.GenerateRefreshToken(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+
 	return &AuthResponse{AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
 }

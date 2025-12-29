@@ -9,7 +9,7 @@ import (
 )
 
 // TestGenerateAccessToken_ValidClaims tests that GenerateAccessToken generates a valid
-// access token containing the user_id claim and expires in 24 hours.
+// access token containing the user_id claim and expires in 15 minutes.
 func TestGenerateAccessToken_ValidClaims(t *testing.T) {
 	// Arrange
 	jwtSecret := "test-secret-key-for-jwt-signing"
@@ -29,8 +29,8 @@ func TestGenerateAccessToken_ValidClaims(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, userID, claims.UserID)
 
-	// Verify expiry is approximately 24 hours from now
-	expectedExpiry := time.Now().Add(24 * time.Hour)
+	// Verify expiry is approximately 15 minutes from now (security best practice)
+	expectedExpiry := time.Now().Add(15 * time.Minute)
 	assert.WithinDuration(t, expectedExpiry, claims.ExpiresAt, 5*time.Second)
 }
 
