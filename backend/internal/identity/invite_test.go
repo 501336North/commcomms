@@ -1,7 +1,7 @@
 package identity
 
 import (
-	"errors"
+	"context"
 	"regexp"
 	"testing"
 	"time"
@@ -10,10 +10,64 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// MockCommunityRepository is a mock implementation of CommunityRepository for testing.
+type MockCommunityRepository struct {
+	communities map[string]*Community
+}
+
+func NewMockCommunityRepository() *MockCommunityRepository {
+	return &MockCommunityRepository{
+		communities: make(map[string]*Community),
+	}
+}
+
+func (m *MockCommunityRepository) FindByID(ctx context.Context, id string) (*Community, error) {
+	if community, ok := m.communities[id]; ok {
+		return community, nil
+	}
+	return nil, ErrNotCommunityMember
+}
+
+func (m *MockCommunityRepository) Add(community *Community) {
+	m.communities[community.ID] = community
+}
+
+// MockInviteValidationRepository is a mock implementation of invite repository for validation tests.
+type MockInviteValidationRepository struct {
+	invites map[string]*Invite
+}
+
+func NewMockInviteValidationRepository() *MockInviteValidationRepository {
+	return &MockInviteValidationRepository{
+		invites: make(map[string]*Invite),
+	}
+}
+
+func (m *MockInviteValidationRepository) FindByCode(ctx context.Context, code string) (*Invite, error) {
+	if invite, ok := m.invites[code]; ok {
+		return invite, nil
+	}
+	return nil, ErrInviteNotFound
+}
+
+func (m *MockInviteValidationRepository) IncrementUsage(ctx context.Context, code string) error {
+	if invite, ok := m.invites[code]; ok {
+		invite.UsedCount++
+		return nil
+	}
+	return ErrInviteNotFound
+}
+
+func (m *MockInviteValidationRepository) Add(invite *Invite) {
+	m.invites[invite.Code] = invite
+}
+
 // TestCreateInvite_UniqueCode tests that CreateInvite generates a unique 32-character alphanumeric code.
 func TestCreateInvite_UniqueCode(t *testing.T) {
 	// Arrange
-	service := NewInviteService()
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
 	opts := InviteOptions{}
 
 	// Act
@@ -29,7 +83,9 @@ func TestCreateInvite_UniqueCode(t *testing.T) {
 // TestCreateInvite_DefaultExpiry tests that CreateInvite sets a default expiry of 7 days.
 func TestCreateInvite_DefaultExpiry(t *testing.T) {
 	// Arrange
-	service := NewInviteService()
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
 	opts := InviteOptions{}
 	now := time.Now()
 
@@ -48,7 +104,9 @@ func TestCreateInvite_DefaultExpiry(t *testing.T) {
 // TestCreateInvite_CustomMaxUses tests that CreateInvite respects custom max uses.
 func TestCreateInvite_CustomMaxUses(t *testing.T) {
 	// Arrange
-	service := NewInviteService()
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
 	opts := InviteOptions{
 		MaxUses: 5,
 	}
@@ -65,9 +123,10 @@ func TestCreateInvite_CustomMaxUses(t *testing.T) {
 // TestGenerateInviteCode tests that generateInviteCode produces a 32-character alphanumeric string.
 func TestGenerateInviteCode(t *testing.T) {
 	// Act
-	code := generateInviteCode()
+	code, err := generateInviteCode()
 
 	// Assert
+	require.NoError(t, err)
 	assert.Len(t, code, 32, "generated code should be 32 characters")
 	assert.Regexp(t, regexp.MustCompile(`^[a-zA-Z0-9]+$`), code, "generated code should be alphanumeric")
 }
@@ -79,7 +138,8 @@ func TestGenerateInviteCode_Uniqueness(t *testing.T) {
 
 	// Act - Generate 100 codes
 	for i := 0; i < 100; i++ {
-		code := generateInviteCode()
+		code, err := generateInviteCode()
+		require.NoError(t, err)
 		codes[code] = true
 	}
 
@@ -87,72 +147,13 @@ func TestGenerateInviteCode_Uniqueness(t *testing.T) {
 	assert.Len(t, codes, 100, "all 100 generated codes should be unique")
 }
 
-// MockCommunityRepository is a mock implementation of CommunityRepository for testing.
-type MockCommunityRepository struct {
-	communities map[string]*Community
-}
-
-func NewMockCommunityRepository() *MockCommunityRepository {
-	return &MockCommunityRepository{
-		communities: make(map[string]*Community),
-	}
-}
-
-func (m *MockCommunityRepository) FindByID(id string) (*Community, error) {
-	if community, ok := m.communities[id]; ok {
-		return community, nil
-	}
-	return nil, ErrCommunityNotFound
-}
-
-func (m *MockCommunityRepository) Add(community *Community) {
-	m.communities[community.ID] = community
-}
-
-// MockInviteValidationRepository is a mock implementation of invite repository for validation tests.
-type MockInviteValidationRepository struct {
-	invites map[string]*Invite
-}
-
-func NewMockInviteValidationRepository() *MockInviteValidationRepository {
-	return &MockInviteValidationRepository{
-		invites: make(map[string]*Invite),
-	}
-}
-
-func (m *MockInviteValidationRepository) FindByCode(code string) (*Invite, error) {
-	if invite, ok := m.invites[code]; ok {
-		return invite, nil
-	}
-	return nil, ErrInviteNotFound
-}
-
-func (m *MockInviteValidationRepository) IncrementUsage(code string) error {
-	if invite, ok := m.invites[code]; ok {
-		invite.UsedCount++
-		return nil
-	}
-	return ErrInviteNotFound
-}
-
-func (m *MockInviteValidationRepository) Add(invite *Invite) {
-	m.invites[invite.Code] = invite
-}
-
-// Sentinel errors for invite validation.
-// Note: ErrInviteNotFound is declared in service_test.go
-var (
-	ErrInviteExpired      = errors.New("Invite link has expired")
-	ErrInviteExhausted    = errors.New("Invite link exhausted")
-	ErrCommunityNotFound  = errors.New("community not found")
-)
-
 // TestValidateInvite_Valid tests that ValidateInvite accepts a valid invite code and returns the community.
 func TestValidateInvite_Valid(t *testing.T) {
 	// Arrange
 	mockInviteRepo := NewMockInviteValidationRepository()
 	mockCommunityRepo := NewMockCommunityRepository()
-	service := NewInviteServiceWithRepos(mockInviteRepo, mockCommunityRepo)
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
 
 	// Add a valid invite
 	validInvite := &Invite{
@@ -173,7 +174,7 @@ func TestValidateInvite_Valid(t *testing.T) {
 	mockCommunityRepo.Add(community)
 
 	// Act
-	result, err := service.ValidateInvite("VALID_INVITE_CODE_12345678901234")
+	result, err := service.ValidateInvite(ctx, "VALID_INVITE_CODE_12345678901234")
 
 	// Assert
 	require.NoError(t, err)
@@ -185,7 +186,9 @@ func TestValidateInvite_Valid(t *testing.T) {
 func TestValidateInvite_Expired(t *testing.T) {
 	// Arrange
 	mockInviteRepo := NewMockInviteValidationRepository()
-	service := NewInviteServiceWithRepos(mockInviteRepo, nil)
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
 
 	// Add an expired invite
 	expiredInvite := &Invite{
@@ -199,7 +202,7 @@ func TestValidateInvite_Expired(t *testing.T) {
 	mockInviteRepo.Add(expiredInvite)
 
 	// Act
-	result, err := service.ValidateInvite("EXPIRED_INVITE_CODE_123456789012")
+	result, err := service.ValidateInvite(ctx, "EXPIRED_INVITE_CODE_123456789012")
 
 	// Assert
 	require.Error(t, err)
@@ -211,7 +214,9 @@ func TestValidateInvite_Expired(t *testing.T) {
 func TestValidateInvite_Exhausted(t *testing.T) {
 	// Arrange
 	mockInviteRepo := NewMockInviteValidationRepository()
-	service := NewInviteServiceWithRepos(mockInviteRepo, nil)
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
 
 	// Add an exhausted invite (UsedCount == MaxUses)
 	exhaustedInvite := &Invite{
@@ -225,7 +230,7 @@ func TestValidateInvite_Exhausted(t *testing.T) {
 	mockInviteRepo.Add(exhaustedInvite)
 
 	// Act
-	result, err := service.ValidateInvite("EXHAUSTED_INVITE_CODE_1234567890")
+	result, err := service.ValidateInvite(ctx, "EXHAUSTED_INVITE_CODE_1234567890")
 
 	// Assert
 	require.Error(t, err)
@@ -233,11 +238,48 @@ func TestValidateInvite_Exhausted(t *testing.T) {
 	assert.Equal(t, ErrInviteExhausted, err)
 }
 
+// TestValidateInvite_UnlimitedUses tests that ValidateInvite allows invites with MaxUses=0 (unlimited).
+func TestValidateInvite_UnlimitedUses(t *testing.T) {
+	// Arrange
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
+
+	// Add an unlimited invite (MaxUses = 0)
+	unlimitedInvite := &Invite{
+		Code:        "UNLIMITED_INVITE_CODE_1234567890",
+		CommunityID: "community-123",
+		CreatorID:   "creator-456",
+		MaxUses:     0,   // Unlimited
+		UsedCount:   100, // Already used many times
+		ExpiresAt:   time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.Add(unlimitedInvite)
+
+	// Add the community
+	community := &Community{
+		ID:   "community-123",
+		Name: "Test Community",
+	}
+	mockCommunityRepo.Add(community)
+
+	// Act
+	result, err := service.ValidateInvite(ctx, "UNLIMITED_INVITE_CODE_1234567890")
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "community-123", result.ID)
+}
+
 // TestUseInvite_IncrementsCount tests that UseInvite increments the UsedCount by 1.
 func TestUseInvite_IncrementsCount(t *testing.T) {
 	// Arrange
 	mockInviteRepo := NewMockInviteValidationRepository()
-	service := NewInviteServiceWithRepos(mockInviteRepo, nil)
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
 
 	// Add a valid invite with some usage
 	validInvite := &Invite{
@@ -251,12 +293,12 @@ func TestUseInvite_IncrementsCount(t *testing.T) {
 	mockInviteRepo.Add(validInvite)
 
 	// Act
-	err := service.UseInvite("USE_INVITE_CODE_12345678901234")
+	err := service.UseInvite(ctx, "USE_INVITE_CODE_12345678901234")
 
 	// Assert
 	require.NoError(t, err)
 
 	// Verify the count was incremented
-	updatedInvite, _ := mockInviteRepo.FindByCode("USE_INVITE_CODE_12345678901234")
+	updatedInvite, _ := mockInviteRepo.FindByCode(ctx, "USE_INVITE_CODE_12345678901234")
 	assert.Equal(t, 4, updatedInvite.UsedCount, "UsedCount should be incremented by 1")
 }

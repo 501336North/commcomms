@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -80,11 +81,12 @@ func TestRegister_ValidUser(t *testing.T) {
 
 	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
 
-	// Valid invite exists
+	// Valid invite exists with future expiry
 	validInvite := &Invite{
-		Code:     "VALID_CODE",
-		MaxUses:  10,
+		Code:      "VALID_CODE",
+		MaxUses:   10,
 		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
 	mockInviteRepo.On("IncrementUsage", ctx, "VALID_CODE").Return(nil)
@@ -141,6 +143,66 @@ func TestRegister_InvalidInvite(t *testing.T) {
 	mockInviteRepo.AssertExpectations(t)
 }
 
+// TestRegister_ExpiredInvite tests that registration fails with an expired invite.
+func TestRegister_ExpiredInvite(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Expired invite
+	expiredInvite := &Invite{
+		Code:      "EXPIRED_CODE",
+		MaxUses:   10,
+		UsedCount: 0,
+		ExpiresAt: time.Now().Add(-24 * time.Hour), // Expired yesterday
+	}
+	mockInviteRepo.On("FindByCode", ctx, "EXPIRED_CODE").Return(expiredInvite, nil)
+
+	// Act
+	user, err := service.Register(ctx, "newuser@example.com", "SecurePass123", "newuser", "EXPIRED_CODE")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.Equal(t, ErrInviteExpired, err)
+
+	mockInviteRepo.AssertExpectations(t)
+}
+
+// TestRegister_ExhaustedInvite tests that registration fails when invite has reached max uses.
+func TestRegister_ExhaustedInvite(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Exhausted invite
+	exhaustedInvite := &Invite{
+		Code:      "EXHAUSTED_CODE",
+		MaxUses:   5,
+		UsedCount: 5, // Already used max times
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.On("FindByCode", ctx, "EXHAUSTED_CODE").Return(exhaustedInvite, nil)
+
+	// Act
+	user, err := service.Register(ctx, "newuser@example.com", "SecurePass123", "newuser", "EXHAUSTED_CODE")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.Equal(t, ErrInviteExhausted, err)
+
+	mockInviteRepo.AssertExpectations(t)
+}
+
 // TestRegister_DuplicateEmail tests that registration fails when the email is already registered.
 // The service should return an "Email already registered" error.
 func TestRegister_DuplicateEmail(t *testing.T) {
@@ -154,9 +216,10 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 
 	// Valid invite exists
 	validInvite := &Invite{
-		Code:     "VALID_CODE",
-		MaxUses:  10,
+		Code:      "VALID_CODE",
+		MaxUses:   10,
 		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
 
@@ -192,9 +255,10 @@ func TestRegister_WeakPassword(t *testing.T) {
 
 	// Valid invite exists
 	validInvite := &Invite{
-		Code:     "VALID_CODE",
-		MaxUses:  10,
+		Code:      "VALID_CODE",
+		MaxUses:   10,
 		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
 
@@ -209,17 +273,76 @@ func TestRegister_WeakPassword(t *testing.T) {
 	mockInviteRepo.AssertExpectations(t)
 }
 
-// Sentinel errors that the service should return.
-var (
-	ErrUserNotFound           = errors.New("user not found")
-	ErrInviteNotFound         = errors.New("invite not found")
-	ErrInvalidInviteCode      = errors.New("Invalid invite code")
-	ErrEmailAlreadyRegistered = errors.New("Email already registered")
-	ErrPasswordTooShort       = errors.New("Password must be at least 8 characters")
-	ErrHandleInvalidChars     = errors.New("Handle can only contain letters, numbers, underscores")
-	ErrHandleAlreadyTaken     = errors.New("Handle already taken")
-	ErrHandleTooLong          = errors.New("Handle must be 20 characters or less")
-)
+// TestRegister_InvalidEmail tests that registration fails with invalid email format.
+func TestRegister_InvalidEmail(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Valid invite exists
+	validInvite := &Invite{
+		Code:      "VALID_CODE",
+		MaxUses:   10,
+		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
+
+	// Act
+	user, err := service.Register(ctx, "notanemail", "SecurePass123", "newuser", "VALID_CODE")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.Equal(t, ErrInvalidEmailFormat, err)
+
+	mockInviteRepo.AssertExpectations(t)
+}
+
+// TestRegister_DuplicateHandle tests that registration fails when handle is already taken.
+func TestRegister_DuplicateHandle(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Valid invite exists
+	validInvite := &Invite{
+		Code:      "VALID_CODE",
+		MaxUses:   10,
+		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
+
+	// Email doesn't exist
+	mockUserRepo.On("FindByEmail", ctx, "newuser@example.com").Return(nil, ErrUserNotFound)
+
+	// Handle already exists
+	existingUser := &User{
+		ID:     "existing-id",
+		Handle: "takenhandle",
+	}
+	mockUserRepo.On("FindByHandle", ctx, "takenhandle").Return(existingUser, nil)
+
+	// Act
+	user, err := service.Register(ctx, "newuser@example.com", "SecurePass123", "takenhandle", "VALID_CODE")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.Equal(t, ErrHandleAlreadyTaken, err)
+
+	mockUserRepo.AssertExpectations(t)
+	mockInviteRepo.AssertExpectations(t)
+}
 
 // TestValidateHandle_Valid tests that a valid handle with letters, numbers, and underscores is accepted.
 func TestValidateHandle_Valid(t *testing.T) {
@@ -271,6 +394,23 @@ func TestValidateHandle_TooLong(t *testing.T) {
 	assert.Equal(t, ErrHandleTooLong, err)
 }
 
+// TestValidateHandle_TooShort tests that a handle shorter than 3 characters is rejected.
+func TestValidateHandle_TooShort(t *testing.T) {
+	// Arrange
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Act
+	err := service.validateHandle("ab")
+
+	// Assert
+	require.Error(t, err)
+	assert.Equal(t, ErrHandleTooShort, err)
+}
+
 // TestValidateHandle_Duplicate tests that a handle already taken by another user is rejected.
 func TestValidateHandle_Duplicate(t *testing.T) {
 	// Arrange
@@ -312,9 +452,6 @@ func (m *MockTokenGenerator) GenerateRefreshToken(userID string) (string, error)
 	args := m.Called(userID)
 	return args.String(0), args.Error(1)
 }
-
-// Sentinel error for login failures.
-var ErrInvalidCredentials = errors.New("Invalid credentials")
 
 // TestLogin_ValidCredentials tests that a user can login with valid email and password.
 // The service should return access and refresh tokens.
@@ -422,6 +559,46 @@ func TestLogin_NonExistentEmail(t *testing.T) {
 	mockUserRepo.AssertExpectations(t)
 }
 
+// TestLogin_TokenGenerationFailure tests that login fails if token generation fails.
+func TestLogin_TokenGenerationFailure(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+	mockTokenGen := new(MockTokenGenerator)
+
+	service := NewServiceWithTokenGenerator(mockUserRepo, mockInviteRepo, mockHasher, mockTokenGen)
+
+	// User exists
+	existingUser := &User{
+		ID:           "user-123",
+		Email:        "user@example.com",
+		Handle:       "testuser",
+		PasswordHash: "hashed_password",
+		Reputation:   0,
+	}
+	mockUserRepo.On("FindByEmail", ctx, "user@example.com").Return(existingUser, nil)
+
+	// Password matches
+	mockHasher.On("Compare", "hashed_password", "correct_password").Return(nil)
+
+	// Token generation fails
+	mockTokenGen.On("GenerateAccessToken", "user-123").Return("", errors.New("token generation failed"))
+
+	// Act
+	authResponse, err := service.Login(ctx, "user@example.com", "correct_password")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, authResponse)
+	assert.Contains(t, err.Error(), "failed to generate access token")
+
+	mockUserRepo.AssertExpectations(t)
+	mockHasher.AssertExpectations(t)
+	mockTokenGen.AssertExpectations(t)
+}
+
 // MockTokenValidator is a mock implementation of TokenValidator for testing.
 type MockTokenValidator struct {
 	mock.Mock
@@ -446,12 +623,6 @@ func (m *MockRefreshTokenRepository) Revoke(ctx context.Context, token string) e
 	args := m.Called(ctx, token)
 	return args.Error(0)
 }
-
-// Sentinel errors for token refresh failures.
-var (
-	ErrTokenRevoked = errors.New("Token revoked")
-	ErrTokenExpired = errors.New("Token expired")
-)
 
 // TestRefreshTokens_Valid tests that new tokens are issued with a valid refresh token.
 // The service should return new access and refresh tokens.
@@ -552,4 +723,51 @@ func TestRefreshTokens_Expired(t *testing.T) {
 	assert.Equal(t, ErrTokenExpired, err)
 
 	mockTokenValidator.AssertExpectations(t)
+}
+
+// TestValidateEmail_Valid tests that valid email formats are accepted.
+func TestValidateEmail_Valid(t *testing.T) {
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	validEmails := []string{
+		"user@example.com",
+		"user.name@example.com",
+		"user+tag@example.com",
+		"user@sub.domain.com",
+	}
+
+	for _, email := range validEmails {
+		t.Run(email, func(t *testing.T) {
+			err := service.validateEmail(email)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// TestValidateEmail_Invalid tests that invalid email formats are rejected.
+func TestValidateEmail_Invalid(t *testing.T) {
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	invalidEmails := []string{
+		"notanemail",
+		"@example.com",
+		"user@",
+		"user@.com",
+		"user@example",
+	}
+
+	for _, email := range invalidEmails {
+		t.Run(email, func(t *testing.T) {
+			err := service.validateEmail(email)
+			assert.Equal(t, ErrInvalidEmailFormat, err)
+		})
+	}
 }

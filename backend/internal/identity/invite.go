@@ -1,7 +1,9 @@
 package identity
 
 import (
+	"context"
 	"crypto/rand"
+	"fmt"
 	"time"
 )
 
@@ -16,12 +18,12 @@ type Community struct {
 }
 
 type CommunityRepository interface {
-	FindByID(id string) (*Community, error)
+	FindByID(ctx context.Context, id string) (*Community, error)
 }
 
 type InviteValidationRepository interface {
-	FindByCode(code string) (*Invite, error)
-	IncrementUsage(code string) error
+	FindByCode(ctx context.Context, code string) (*Invite, error)
+	IncrementUsage(ctx context.Context, code string) error
 }
 
 type InviteService struct {
@@ -29,12 +31,14 @@ type InviteService struct {
 	communityRepo CommunityRepository
 }
 
-func NewInviteService() *InviteService {
-	return &InviteService{}
-}
-
-func NewInviteServiceWithRepos(inviteRepo InviteValidationRepository, communityRepo CommunityRepository) *InviteService {
-	return &InviteService{inviteRepo: inviteRepo, communityRepo: communityRepo}
+func NewInviteService(inviteRepo InviteValidationRepository, communityRepo CommunityRepository) *InviteService {
+	if inviteRepo == nil || communityRepo == nil {
+		panic("InviteService requires non-nil repositories")
+	}
+	return &InviteService{
+		inviteRepo:    inviteRepo,
+		communityRepo: communityRepo,
+	}
 }
 
 func (s *InviteService) CreateInvite(communityID, creatorID string, opts InviteOptions) (*Invite, error) {
@@ -42,8 +46,14 @@ func (s *InviteService) CreateInvite(communityID, creatorID string, opts InviteO
 	if expiresAt.IsZero() {
 		expiresAt = time.Now().Add(7 * 24 * time.Hour)
 	}
+
+	code, err := generateInviteCode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate invite code: %w", err)
+	}
+
 	return &Invite{
-		Code:        generateInviteCode(),
+		Code:        code,
 		MaxUses:     opts.MaxUses,
 		ExpiresAt:   expiresAt,
 		CommunityID: communityID,
@@ -51,30 +61,33 @@ func (s *InviteService) CreateInvite(communityID, creatorID string, opts InviteO
 	}, nil
 }
 
-func generateInviteCode() string {
+func generateInviteCode() (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
 	for i := range b {
 		b[i] = chars[b[i]%62]
 	}
-	return string(b)
+	return string(b), nil
 }
 
-func (s *InviteService) ValidateInvite(code string) (*Community, error) {
-	invite, err := s.inviteRepo.FindByCode(code)
+func (s *InviteService) ValidateInvite(ctx context.Context, code string) (*Community, error) {
+	invite, err := s.inviteRepo.FindByCode(ctx, code)
 	if err != nil {
-		return nil, err
+		return nil, ErrInviteNotFound
 	}
 	if time.Now().After(invite.ExpiresAt) {
 		return nil, ErrInviteExpired
 	}
-	if invite.UsedCount >= invite.MaxUses {
+	// MaxUses of 0 means unlimited uses
+	if invite.MaxUses > 0 && invite.UsedCount >= invite.MaxUses {
 		return nil, ErrInviteExhausted
 	}
-	return s.communityRepo.FindByID(invite.CommunityID)
+	return s.communityRepo.FindByID(ctx, invite.CommunityID)
 }
 
-func (s *InviteService) UseInvite(code string) error {
-	return s.inviteRepo.IncrementUsage(code)
+func (s *InviteService) UseInvite(ctx context.Context, code string) error {
+	return s.inviteRepo.IncrementUsage(ctx, code)
 }
