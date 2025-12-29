@@ -1,0 +1,1881 @@
+openapi: 3.0.3
+info:
+  title: CommComms API
+  description: |
+    AI-native community platform where conversations degrade into knowledge.
+
+    ## Authentication
+    Most endpoints require Bearer token authentication.
+    Obtain tokens via POST /api/v1/auth/login.
+
+    ## WebSocket
+    Real-time messaging uses WebSocket at ws://api.commcomms.io/ws
+
+    ## Rate Limiting
+    - 30 requests/minute for message endpoints
+    - 100 requests/minute for read endpoints
+    - 10 requests/minute for AI-powered endpoints
+  version: 1.0.0
+  contact:
+    name: CommComms API Support
+    email: api@commcomms.io
+
+servers:
+  - url: https://api.commcomms.io
+    description: Production
+  - url: https://staging-api.commcomms.io
+    description: Staging
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Authentication and session management
+  - name: Users
+    description: User profiles and reputation
+  - name: Communities
+    description: Community management
+  - name: Channels
+    description: Channel management within communities
+  - name: Threads
+    description: Thread and message operations
+  - name: Messages
+    description: Real-time messaging
+  - name: Knowledge
+    description: Knowledge engine - entities, summaries, cards
+  - name: Search
+    description: Keyword and semantic search
+  - name: Governance
+    description: DAO proposals and voting
+  - name: Tokens
+    description: Token operations on Base L2
+  - name: Location
+    description: Check-ins and nearby queries
+
+paths:
+  # ============================================
+  # AUTH ENDPOINTS
+  # ============================================
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user with invite
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout and invalidate session
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Logged out successfully
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================
+  # USER ENDPOINTS
+  # ============================================
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+    patch:
+      tags: [Users]
+      summary: Update current user profile
+      operationId: updateCurrentUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  /api/v1/users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get user profile by ID
+      operationId: getUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/users/{userId}/reputation:
+    get:
+      tags: [Users]
+      summary: Get user reputation details
+      operationId: getUserReputation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Reputation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReputationDetails'
+
+  # ============================================
+  # COMMUNITY ENDPOINTS
+  # ============================================
+  /api/v1/communities:
+    get:
+      tags: [Communities]
+      summary: List user's communities
+      operationId: listCommunities
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of communities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityList'
+
+    post:
+      tags: [Communities]
+      summary: Create a new community
+      operationId: createCommunity
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommunityRequest'
+      responses:
+        '201':
+          description: Community created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+        '402':
+          description: Premium required for private communities
+
+  /api/v1/communities/{communityId}:
+    get:
+      tags: [Communities]
+      summary: Get community details
+      operationId: getCommunity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      responses:
+        '200':
+          description: Community details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+
+    patch:
+      tags: [Communities]
+      summary: Update community settings
+      operationId: updateCommunity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommunityRequest'
+      responses:
+        '200':
+          description: Community updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+
+  /api/v1/communities/{communityId}/invites:
+    post:
+      tags: [Communities]
+      summary: Generate invite link
+      operationId: createInvite
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInviteRequest'
+      responses:
+        '201':
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invite'
+
+  /api/v1/communities/{communityId}/members:
+    get:
+      tags: [Communities]
+      summary: List community members
+      operationId: listMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Member list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberList'
+
+  # ============================================
+  # CHANNEL ENDPOINTS
+  # ============================================
+  /api/v1/communities/{communityId}/channels:
+    get:
+      tags: [Channels]
+      summary: List channels in community
+      operationId: listChannels
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      responses:
+        '200':
+          description: Channel list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelList'
+
+    post:
+      tags: [Channels]
+      summary: Create a channel
+      operationId: createChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequest'
+      responses:
+        '201':
+          description: Channel created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+  # ============================================
+  # THREAD ENDPOINTS
+  # ============================================
+  /api/v1/channels/{channelId}/threads:
+    get:
+      tags: [Threads]
+      summary: List threads in channel
+      operationId: listThreads
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/channelId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Thread list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadList'
+
+    post:
+      tags: [Threads]
+      summary: Create a thread
+      operationId: createThread
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/channelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThreadRequest'
+      responses:
+        '201':
+          description: Thread created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Thread'
+
+  /api/v1/threads/{threadId}:
+    get:
+      tags: [Threads]
+      summary: Get thread with messages
+      operationId: getThread
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/threadId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Thread with messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadWithMessages'
+
+  # ============================================
+  # MESSAGE ENDPOINTS
+  # ============================================
+  /api/v1/threads/{threadId}/messages:
+    post:
+      tags: [Messages]
+      summary: Send message to thread
+      operationId: sendMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/threadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/messages/{messageId}:
+    patch:
+      tags: [Messages]
+      summary: Edit message
+      operationId: editMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/messageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditMessageRequest'
+      responses:
+        '200':
+          description: Message edited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+    delete:
+      tags: [Messages]
+      summary: Delete message
+      operationId: deleteMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/messageId'
+      responses:
+        '204':
+          description: Message deleted
+
+  /api/v1/messages/{messageId}/reactions:
+    post:
+      tags: [Messages]
+      summary: Add reaction to message
+      operationId: addReaction
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/messageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReactionRequest'
+      responses:
+        '201':
+          description: Reaction added
+
+  # ============================================
+  # KNOWLEDGE ENDPOINTS
+  # ============================================
+  /api/v1/communities/{communityId}/entities:
+    get:
+      tags: [Knowledge]
+      summary: List knowledge entities
+      operationId: listEntities
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [location, topic, person]
+      responses:
+        '200':
+          description: Entity list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityList'
+
+  /api/v1/entities/{entityId}:
+    get:
+      tags: [Knowledge]
+      summary: Get entity with knowledge card
+      operationId: getEntity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/entityId'
+      responses:
+        '200':
+          description: Entity with aggregated knowledge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityWithCard'
+
+  /api/v1/threads/{threadId}/summary:
+    get:
+      tags: [Knowledge]
+      summary: Get thread summary
+      operationId: getThreadSummary
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/threadId'
+      responses:
+        '200':
+          description: Thread summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadSummary'
+        '404':
+          description: No summary available yet
+
+    post:
+      tags: [Knowledge]
+      summary: Trigger summary generation
+      operationId: generateSummary
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/threadId'
+      responses:
+        '202':
+          description: Summary generation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsyncJobResponse'
+
+  # ============================================
+  # SEARCH ENDPOINTS
+  # ============================================
+  /api/v1/communities/{communityId}/search:
+    get:
+      tags: [Search]
+      summary: Search community content
+      operationId: search
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [keyword, semantic, hybrid]
+            default: hybrid
+        - name: entityFilter
+          in: query
+          schema:
+            type: string
+          description: Filter by entity ID
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+
+  # ============================================
+  # GOVERNANCE ENDPOINTS
+  # ============================================
+  /api/v1/communities/{communityId}/proposals:
+    get:
+      tags: [Governance]
+      summary: List proposals
+      operationId: listProposals
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, passed, rejected, expired]
+      responses:
+        '200':
+          description: Proposal list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalList'
+
+    post:
+      tags: [Governance]
+      summary: Create proposal
+      operationId: createProposal
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProposalRequest'
+      responses:
+        '201':
+          description: Proposal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '403':
+          description: Insufficient reputation
+
+  /api/v1/proposals/{proposalId}:
+    get:
+      tags: [Governance]
+      summary: Get proposal details
+      operationId: getProposal
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/proposalId'
+      responses:
+        '200':
+          description: Proposal details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalDetails'
+
+  /api/v1/proposals/{proposalId}/votes:
+    post:
+      tags: [Governance]
+      summary: Cast vote on proposal
+      operationId: castVote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/proposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CastVoteRequest'
+      responses:
+        '201':
+          description: Vote cast
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteReceipt'
+        '409':
+          description: Already voted (use PATCH to change)
+
+    patch:
+      tags: [Governance]
+      summary: Change vote on proposal
+      operationId: changeVote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/proposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CastVoteRequest'
+      responses:
+        '200':
+          description: Vote changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteReceipt'
+
+  # ============================================
+  # TOKEN ENDPOINTS
+  # ============================================
+  /api/v1/users/me/wallet:
+    get:
+      tags: [Tokens]
+      summary: Get connected wallet
+      operationId: getWallet
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Wallet details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletDetails'
+        '404':
+          description: No wallet connected
+
+    post:
+      tags: [Tokens]
+      summary: Connect wallet
+      operationId: connectWallet
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectWalletRequest'
+      responses:
+        '201':
+          description: Wallet connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletDetails'
+
+    delete:
+      tags: [Tokens]
+      summary: Disconnect wallet
+      operationId: disconnectWallet
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Wallet disconnected
+
+  /api/v1/communities/{communityId}/token:
+    get:
+      tags: [Tokens]
+      summary: Get community token info
+      operationId: getCommunityToken
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      responses:
+        '200':
+          description: Token info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenInfo'
+        '404':
+          description: No token deployed
+
+    post:
+      tags: [Tokens]
+      summary: Deploy community token
+      operationId: deployToken
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployTokenRequest'
+      responses:
+        '202':
+          description: Deployment started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenDeploymentStatus'
+
+  /api/v1/communities/{communityId}/token/distribute:
+    post:
+      tags: [Tokens]
+      summary: Distribute tokens to members
+      operationId: distributeTokens
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistributeTokensRequest'
+      responses:
+        '202':
+          description: Distribution started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsyncJobResponse'
+
+  # ============================================
+  # LOCATION ENDPOINTS
+  # ============================================
+  /api/v1/users/me/checkin:
+    post:
+      tags: [Location]
+      summary: Check in to location
+      operationId: checkIn
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckInRequest'
+      responses:
+        '201':
+          description: Checked in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckIn'
+
+    get:
+      tags: [Location]
+      summary: Get current check-in
+      operationId: getCurrentCheckIn
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current check-in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckIn'
+        '404':
+          description: No active check-in
+
+  /api/v1/communities/{communityId}/nearby:
+    get:
+      tags: [Location]
+      summary: Find nearby members
+      operationId: findNearby
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+          description: City or country name
+        - name: radius
+          in: query
+          schema:
+            type: string
+            enum: [city, country, region]
+            default: city
+      responses:
+        '200':
+          description: Nearby members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NearbyMembers'
+
+  # ============================================
+  # PRESENCE (WebSocket info)
+  # ============================================
+  /api/v1/communities/{communityId}/presence:
+    get:
+      tags: [Messages]
+      summary: Get online members
+      operationId: getPresence
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/communityId'
+      responses:
+        '200':
+          description: Online members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresenceList'
+
+components:
+  # ============================================
+  # SECURITY SCHEMES
+  # ============================================
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # ============================================
+  # PARAMETERS
+  # ============================================
+  parameters:
+    userId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    communityId:
+      name: communityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    channelId:
+      name: channelId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    threadId:
+      name: threadId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    messageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    entityId:
+      name: entityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    proposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  # ============================================
+  # RESPONSES
+  # ============================================
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+
+  # ============================================
+  # SCHEMAS
+  # ============================================
+  schemas:
+    # --- Auth ---
+    RegisterRequest:
+      type: object
+      required: [email, password, handle, inviteCode]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        handle:
+          type: string
+          pattern: '^[a-zA-Z0-9_]{3,20}$'
+        inviteCode:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    # --- User ---
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        handle:
+          type: string
+        displayName:
+          type: string
+        bio:
+          type: string
+        avatarUrl:
+          type: string
+        reputation:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        currentLocation:
+          $ref: '#/components/schemas/Location'
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 50
+        bio:
+          type: string
+          maxLength: 500
+        avatarUrl:
+          type: string
+          format: uri
+
+    ReputationDetails:
+      type: object
+      properties:
+        total:
+          type: integer
+        rank:
+          type: integer
+        breakdown:
+          type: object
+          properties:
+            messages:
+              type: integer
+            helpfulMarks:
+              type: integer
+            threadsStarted:
+              type: integer
+            votesParticipated:
+              type: integer
+
+    # --- Community ---
+    Community:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        isPrivate:
+          type: boolean
+        memberCount:
+          type: integer
+        settings:
+          $ref: '#/components/schemas/CommunitySettings'
+        createdAt:
+          type: string
+          format: date-time
+
+    CommunitySettings:
+      type: object
+      properties:
+        echoEnabled:
+          type: boolean
+          default: true
+        echoTtlHours:
+          type: integer
+          default: 24
+        echoConfidenceThreshold:
+          type: number
+          default: 0.7
+        minReputationToPropose:
+          type: integer
+          default: 100
+        votingQuorumPercent:
+          type: integer
+          default: 20
+
+    CommunityList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Community'
+
+    CreateCommunityRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+        description:
+          type: string
+          maxLength: 500
+        isPrivate:
+          type: boolean
+          default: false
+
+    UpdateCommunityRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        settings:
+          $ref: '#/components/schemas/CommunitySettings'
+
+    Invite:
+      type: object
+      properties:
+        code:
+          type: string
+        url:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+        maxUses:
+          type: integer
+        usesRemaining:
+          type: integer
+
+    CreateInviteRequest:
+      type: object
+      properties:
+        expiresInDays:
+          type: integer
+          default: 7
+        maxUses:
+          type: integer
+          description: null for unlimited
+
+    Member:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserProfile'
+        role:
+          type: string
+          enum: [owner, admin, moderator, member]
+        joinedAt:
+          type: string
+          format: date-time
+        reputationInCommunity:
+          type: integer
+
+    MemberList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # --- Channel ---
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        threadCount:
+          type: integer
+        lastActivityAt:
+          type: string
+          format: date-time
+
+    ChannelList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Channel'
+
+    CreateChannelRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 50
+        description:
+          type: string
+          maxLength: 200
+
+    # --- Thread ---
+    Thread:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        author:
+          $ref: '#/components/schemas/UserProfile'
+        messageCount:
+          type: integer
+        participantCount:
+          type: integer
+        hasSummary:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastMessageAt:
+          type: string
+          format: date-time
+
+    ThreadList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Thread'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ThreadWithMessages:
+      type: object
+      properties:
+        thread:
+          $ref: '#/components/schemas/Thread'
+        summary:
+          $ref: '#/components/schemas/ThreadSummary'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateThreadRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        initialMessage:
+          type: string
+          maxLength: 10000
+
+    # --- Message ---
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        author:
+          $ref: '#/components/schemas/UserProfile'
+        isEcho:
+          type: boolean
+          description: True if from Echo bot
+        expiresAt:
+          type: string
+          format: date-time
+          description: For ephemeral Echo messages
+        reactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reaction'
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRef'
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: string
+          format: date-time
+
+    SendMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+
+    EditMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+
+    Reaction:
+      type: object
+      properties:
+        emoji:
+          type: string
+        count:
+          type: integer
+        users:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ReactionRequest:
+      type: object
+      required: [emoji]
+      properties:
+        emoji:
+          type: string
+          maxLength: 10
+
+    # --- Knowledge ---
+    Entity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [location, topic, person]
+        name:
+          type: string
+        mentionCount:
+          type: integer
+        lastMentionedAt:
+          type: string
+          format: date-time
+
+    EntityRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        name:
+          type: string
+
+    EntityList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entity'
+
+    EntityWithCard:
+      type: object
+      properties:
+        entity:
+          $ref: '#/components/schemas/Entity'
+        card:
+          $ref: '#/components/schemas/KnowledgeCard'
+        relatedThreads:
+          type: array
+          items:
+            $ref: '#/components/schemas/Thread'
+
+    KnowledgeCard:
+      type: object
+      properties:
+        summary:
+          type: string
+        keyPoints:
+          type: array
+          items:
+            type: string
+        contributors:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfile'
+        lastUpdatedAt:
+          type: string
+          format: date-time
+
+    ThreadSummary:
+      type: object
+      properties:
+        summary:
+          type: string
+        keyPoints:
+          type: array
+          items:
+            type: string
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRef'
+        generatedAt:
+          type: string
+          format: date-time
+
+    # --- Search ---
+    SearchResults:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    SearchResult:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [message, thread, entity]
+        score:
+          type: number
+        message:
+          $ref: '#/components/schemas/Message'
+        thread:
+          $ref: '#/components/schemas/Thread'
+        entity:
+          $ref: '#/components/schemas/Entity'
+        highlight:
+          type: string
+          description: Snippet with matching text highlighted
+
+    # --- Governance ---
+    Proposal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        author:
+          $ref: '#/components/schemas/UserProfile'
+        status:
+          type: string
+          enum: [active, passed, rejected, expired]
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposalOption'
+        votingEndsAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ProposalOption:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        voteWeight:
+          type: number
+        voteCount:
+          type: integer
+
+    ProposalList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Proposal'
+
+    ProposalDetails:
+      type: object
+      properties:
+        proposal:
+          $ref: '#/components/schemas/Proposal'
+        quorumReached:
+          type: boolean
+        totalVoteWeight:
+          type: number
+        onChainTxHash:
+          type: string
+
+    CreateProposalRequest:
+      type: object
+      required: [title, description, options, votingDurationHours]
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        options:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: string
+        votingDurationHours:
+          type: integer
+          minimum: 24
+          maximum: 168
+
+    CastVoteRequest:
+      type: object
+      required: [optionId]
+      properties:
+        optionId:
+          type: string
+
+    VoteReceipt:
+      type: object
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        optionId:
+          type: string
+        weight:
+          type: number
+        txHash:
+          type: string
+          description: On-chain transaction hash
+
+    # --- Tokens ---
+    WalletDetails:
+      type: object
+      properties:
+        address:
+          type: string
+        chainId:
+          type: integer
+        connectedAt:
+          type: string
+          format: date-time
+
+    ConnectWalletRequest:
+      type: object
+      required: [address, signature, message]
+      properties:
+        address:
+          type: string
+        signature:
+          type: string
+        message:
+          type: string
+
+    TokenInfo:
+      type: object
+      properties:
+        address:
+          type: string
+        name:
+          type: string
+        symbol:
+          type: string
+        totalSupply:
+          type: string
+        decimals:
+          type: integer
+        chainId:
+          type: integer
+        deployedAt:
+          type: string
+          format: date-time
+
+    DeployTokenRequest:
+      type: object
+      required: [name, symbol, initialSupply]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+        symbol:
+          type: string
+          minLength: 2
+          maxLength: 10
+        initialSupply:
+          type: string
+          description: In wei
+
+    TokenDeploymentStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+        txHash:
+          type: string
+        tokenAddress:
+          type: string
+
+    DistributeTokensRequest:
+      type: object
+      required: [distributions]
+      properties:
+        distributions:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+                format: uuid
+              amount:
+                type: string
+
+    # --- Location ---
+    Location:
+      type: object
+      properties:
+        city:
+          type: string
+        country:
+          type: string
+        countryCode:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    CheckIn:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        location:
+          $ref: '#/components/schemas/Location'
+        visibility:
+          type: string
+          enum: [precise, city, country]
+        checkedInAt:
+          type: string
+          format: date-time
+
+    CheckInRequest:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+        visibility:
+          type: string
+          enum: [precise, city, country]
+          default: city
+
+    NearbyMembers:
+      type: object
+      properties:
+        location:
+          type: string
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                $ref: '#/components/schemas/UserProfile'
+              checkedInAt:
+                type: string
+                format: date-time
+              durationDays:
+                type: integer
+
+    # --- Presence ---
+    PresenceList:
+      type: object
+      properties:
+        online:
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                $ref: '#/components/schemas/UserProfile'
+              lastSeenAt:
+                type: string
+                format: date-time
+
+    # --- Common ---
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    AsyncJobResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        estimatedCompletionSeconds:
+          type: integer
