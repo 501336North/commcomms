@@ -24,6 +24,10 @@ type CommunityRepository interface {
 type InviteValidationRepository interface {
 	FindByCode(ctx context.Context, code string) (*Invite, error)
 	IncrementUsage(ctx context.Context, code string) error
+	// AtomicUseInvite atomically validates and uses an invite in a single transaction.
+	// Returns ErrInviteExhausted if the invite has reached its max uses.
+	// This prevents race conditions where multiple requests could use the same invite slot.
+	AtomicUseInvite(ctx context.Context, code string) error
 }
 
 type InviteService struct {
@@ -90,4 +94,24 @@ func (s *InviteService) ValidateInvite(ctx context.Context, code string) (*Commu
 
 func (s *InviteService) UseInvite(ctx context.Context, code string) error {
 	return s.inviteRepo.IncrementUsage(ctx, code)
+}
+
+// UseInviteAtomic atomically validates and uses an invite to prevent race conditions.
+// This should be used instead of ValidateInvite + UseInvite for concurrent safety.
+func (s *InviteService) UseInviteAtomic(ctx context.Context, code string) (*Community, error) {
+	// First validate the invite exists and get its community
+	invite, err := s.inviteRepo.FindByCode(ctx, code)
+	if err != nil {
+		return nil, ErrInviteNotFound
+	}
+	if time.Now().After(invite.ExpiresAt) {
+		return nil, ErrInviteExpired
+	}
+
+	// Use atomic operation to check and increment in single transaction
+	if err := s.inviteRepo.AtomicUseInvite(ctx, code); err != nil {
+		return nil, err
+	}
+
+	return s.communityRepo.FindByID(ctx, invite.CommunityID)
 }
