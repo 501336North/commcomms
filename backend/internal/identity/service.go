@@ -190,6 +190,20 @@ func (s *Service) validatePassword(password string) error {
 	if len(password) < 8 {
 		return ErrPasswordTooShort
 	}
+
+	// Check for at least one letter and one number
+	var hasLetter, hasNumber bool
+	for _, c := range password {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+			hasLetter = true
+		case c >= '0' && c <= '9':
+			hasNumber = true
+		}
+	}
+	if !hasLetter || !hasNumber {
+		return ErrPasswordTooWeak
+	}
 	return nil
 }
 
@@ -217,7 +231,12 @@ func (s *Service) isHandleAvailable(ctx context.Context, handle string) (bool, e
 
 func (s *Service) Login(ctx context.Context, email, password string) (*AuthResponse, error) {
 	user, err := s.userRepo.FindByEmail(ctx, email)
+
+	// Timing attack prevention: always perform password comparison
+	// even if user doesn't exist, to make both paths take similar time
 	if err != nil {
+		// Compare against a dummy hash to consume similar time
+		_ = s.hasher.Compare("$2a$10$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", password)
 		return nil, ErrInvalidCredentials
 	}
 	if err := s.hasher.Compare(user.PasswordHash, password); err != nil {

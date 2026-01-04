@@ -62,6 +62,19 @@ func (m *MockInviteValidationRepository) Add(invite *Invite) {
 	m.invites[invite.Code] = invite
 }
 
+func (m *MockInviteValidationRepository) AtomicUseInvite(ctx context.Context, code string) error {
+	invite, ok := m.invites[code]
+	if !ok {
+		return ErrInviteNotFound
+	}
+	// Check max uses atomically (MaxUses of 0 means unlimited)
+	if invite.MaxUses > 0 && invite.UsedCount >= invite.MaxUses {
+		return ErrInviteExhausted
+	}
+	invite.UsedCount++
+	return nil
+}
+
 // TestCreateInvite_UniqueCode tests that CreateInvite generates a unique 32-character alphanumeric code.
 func TestCreateInvite_UniqueCode(t *testing.T) {
 	// Arrange
@@ -271,6 +284,101 @@ func TestValidateInvite_UnlimitedUses(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "community-123", result.ID)
+}
+
+// TestUseInviteAtomic_Success tests that UseInviteAtomic atomically validates and uses an invite.
+func TestUseInviteAtomic_Success(t *testing.T) {
+	// Arrange
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
+
+	// Add a valid invite
+	validInvite := &Invite{
+		Code:        "ATOMIC_INVITE_CODE_1234567890123",
+		CommunityID: "community-123",
+		CreatorID:   "creator-456",
+		MaxUses:     5,
+		UsedCount:   3,
+		ExpiresAt:   time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.Add(validInvite)
+
+	// Add the community
+	community := &Community{
+		ID:   "community-123",
+		Name: "Test Community",
+	}
+	mockCommunityRepo.Add(community)
+
+	// Act
+	result, err := service.UseInviteAtomic(ctx, "ATOMIC_INVITE_CODE_1234567890123")
+
+	// Assert
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "community-123", result.ID)
+
+	// Verify the count was incremented
+	updatedInvite, _ := mockInviteRepo.FindByCode(ctx, "ATOMIC_INVITE_CODE_1234567890123")
+	assert.Equal(t, 4, updatedInvite.UsedCount, "UsedCount should be incremented atomically")
+}
+
+// TestUseInviteAtomic_Exhausted tests that UseInviteAtomic rejects exhausted invites atomically.
+func TestUseInviteAtomic_Exhausted(t *testing.T) {
+	// Arrange
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
+
+	// Add an exhausted invite
+	exhaustedInvite := &Invite{
+		Code:        "EXHAUSTED_ATOMIC_CODE_1234567890",
+		CommunityID: "community-123",
+		CreatorID:   "creator-456",
+		MaxUses:     5,
+		UsedCount:   5, // All uses consumed
+		ExpiresAt:   time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.Add(exhaustedInvite)
+
+	// Act
+	result, err := service.UseInviteAtomic(ctx, "EXHAUSTED_ATOMIC_CODE_1234567890")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrInviteExhausted, err)
+}
+
+// TestUseInviteAtomic_Expired tests that UseInviteAtomic rejects expired invites.
+func TestUseInviteAtomic_Expired(t *testing.T) {
+	// Arrange
+	mockInviteRepo := NewMockInviteValidationRepository()
+	mockCommunityRepo := NewMockCommunityRepository()
+	service := NewInviteService(mockInviteRepo, mockCommunityRepo)
+	ctx := context.Background()
+
+	// Add an expired invite
+	expiredInvite := &Invite{
+		Code:        "EXPIRED_ATOMIC_CODE_12345678901",
+		CommunityID: "community-123",
+		CreatorID:   "creator-456",
+		MaxUses:     10,
+		UsedCount:   0,
+		ExpiresAt:   time.Now().Add(-24 * time.Hour), // Expired
+	}
+	mockInviteRepo.Add(expiredInvite)
+
+	// Act
+	result, err := service.UseInviteAtomic(ctx, "EXPIRED_ATOMIC_CODE_12345678901")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrInviteExpired, err)
 }
 
 // TestUseInvite_IncrementsCount tests that UseInvite increments the UsedCount by 1.

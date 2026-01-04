@@ -273,6 +273,66 @@ func TestRegister_WeakPassword(t *testing.T) {
 	mockInviteRepo.AssertExpectations(t)
 }
 
+// TestRegister_PasswordNoNumbers tests that registration fails when password has no numbers.
+func TestRegister_PasswordNoNumbers(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Valid invite exists
+	validInvite := &Invite{
+		Code:      "VALID_CODE",
+		MaxUses:   10,
+		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
+
+	// Act - password has 8+ chars but no numbers
+	user, err := service.Register(ctx, "newuser@example.com", "OnlyLetters", "newuser", "VALID_CODE")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.Equal(t, ErrPasswordTooWeak, err)
+
+	mockInviteRepo.AssertExpectations(t)
+}
+
+// TestRegister_PasswordNoLetters tests that registration fails when password has no letters.
+func TestRegister_PasswordNoLetters(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	mockUserRepo := new(MockUserRepository)
+	mockInviteRepo := new(MockInviteRepository)
+	mockHasher := new(MockPasswordHasher)
+
+	service := NewService(mockUserRepo, mockInviteRepo, mockHasher)
+
+	// Valid invite exists
+	validInvite := &Invite{
+		Code:      "VALID_CODE",
+		MaxUses:   10,
+		UsedCount: 0,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	mockInviteRepo.On("FindByCode", ctx, "VALID_CODE").Return(validInvite, nil)
+
+	// Act - password has 8+ chars but no letters
+	user, err := service.Register(ctx, "newuser@example.com", "12345678", "newuser", "VALID_CODE")
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.Equal(t, ErrPasswordTooWeak, err)
+
+	mockInviteRepo.AssertExpectations(t)
+}
+
 // TestRegister_InvalidEmail tests that registration fails with invalid email format.
 func TestRegister_InvalidEmail(t *testing.T) {
 	// Arrange
@@ -535,6 +595,7 @@ func TestLogin_InvalidPassword(t *testing.T) {
 
 // TestLogin_NonExistentEmail tests that login fails with a non-existent email.
 // The service should return an "Invalid credentials" error (same as invalid password for security).
+// Importantly, it should still perform a password comparison to prevent timing attacks.
 func TestLogin_NonExistentEmail(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -548,6 +609,10 @@ func TestLogin_NonExistentEmail(t *testing.T) {
 	// User does NOT exist
 	mockUserRepo.On("FindByEmail", ctx, "nonexistent@example.com").Return(nil, ErrUserNotFound)
 
+	// Timing attack prevention: password compare is called even for non-existent users
+	// The dummy hash is used to consume similar CPU time as real hash comparison
+	mockHasher.On("Compare", "$2a$10$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", "any_password").Return(ErrInvalidCredentials)
+
 	// Act
 	authResponse, err := service.Login(ctx, "nonexistent@example.com", "any_password")
 
@@ -557,6 +622,7 @@ func TestLogin_NonExistentEmail(t *testing.T) {
 	assert.Equal(t, ErrInvalidCredentials, err)
 
 	mockUserRepo.AssertExpectations(t)
+	mockHasher.AssertExpectations(t)
 }
 
 // TestLogin_TokenGenerationFailure tests that login fails if token generation fails.

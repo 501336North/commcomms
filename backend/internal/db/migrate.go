@@ -55,16 +55,33 @@ func RunMigrations(pool *pgxpool.Pool) error {
 			continue
 		}
 
-		_, err = pool.Exec(ctx, m.sql)
-		if err != nil {
-			return err
-		}
-
-		_, err = pool.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", m.version)
-		if err != nil {
+		// Wrap each migration in a transaction for atomicity
+		if err := runMigrationInTransaction(ctx, pool, m.version, m.sql); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// runMigrationInTransaction executes a single migration within a transaction.
+// If any part of the migration fails, the entire migration is rolled back.
+func runMigrationInTransaction(ctx context.Context, pool *pgxpool.Pool, version int, sql string) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, sql)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", version)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
