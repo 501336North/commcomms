@@ -16,9 +16,17 @@ type ReputationEvent struct {
 	CreatedAt time.Time
 }
 
+// ReputationBreakdown represents a summary of reputation points by event type.
+type ReputationBreakdown struct {
+	EventType string
+	Points    int
+	Count     int
+}
+
 // ReputationRepository defines the interface for reputation data access.
 type ReputationRepository interface {
 	GetReputation(ctx context.Context, userID string) (int, error)
+	GetReputationBreakdown(ctx context.Context, userID string) ([]ReputationBreakdown, error)
 	RecordEvent(ctx context.Context, event *ReputationEvent) error
 	HasRecordedEvent(ctx context.Context, userID, eventType, refID string) (bool, error)
 }
@@ -39,6 +47,11 @@ func NewReputationService(repo ReputationRepository) *ReputationService {
 // GetReputation returns the reputation score for a user.
 func (s *ReputationService) GetReputation(ctx context.Context, userID string) (int, error) {
 	return s.repo.GetReputation(ctx, userID)
+}
+
+// GetReputationBreakdown returns a breakdown of reputation by event type.
+func (s *ReputationService) GetReputationBreakdown(ctx context.Context, userID string) ([]ReputationBreakdown, error) {
+	return s.repo.GetReputationBreakdown(ctx, userID)
 }
 
 // RecordReputationEvent records a reputation event for a user with proper validation.

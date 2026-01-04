@@ -29,6 +29,14 @@ func (m *MockReputationRepository) HasRecordedEvent(ctx context.Context, userID,
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockReputationRepository) GetReputationBreakdown(ctx context.Context, userID string) ([]ReputationBreakdown, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]ReputationBreakdown), args.Error(1)
+}
+
 // TestGetReputation_InitialZero tests that a new user has reputation initialized to 0.
 // This verifies that new users start with zero reputation.
 func TestGetReputation_InitialZero(t *testing.T) {
