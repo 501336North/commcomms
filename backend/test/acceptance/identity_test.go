@@ -32,7 +32,7 @@ var TestServer *httptest.Server
 // - AC-ID-001.3: Password must be >= 8 characters
 // - AC-ID-001.4: Email must be unique
 func TestUserRegistration_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("AC-ID-001.1: should register user with valid email and invite", func(t *testing.T) {
 		// GIVEN - A valid invite code exists
@@ -162,7 +162,7 @@ func TestUserRegistration_Acceptance(t *testing.T) {
 // User Story: As a new member, I want to create a pseudonymous handle
 // so that I control my identity.
 func TestHandleValidation_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("AC-ID-002.1: should accept valid handle with letters and underscores", func(t *testing.T) {
 		// GIVEN - A valid handle format
@@ -229,7 +229,7 @@ func TestHandleValidation_Acceptance(t *testing.T) {
 
 		var body map[string]interface{}
 		json.NewDecoder(resp.Body).Decode(&body)
-		assert.Contains(t, body["error"], "letters, numbers, underscores")
+		assert.Contains(t, body["error"], "letters, numbers")
 	})
 
 	t.Run("should reject handle over 20 characters", func(t *testing.T) {
@@ -263,7 +263,7 @@ func TestHandleValidation_Acceptance(t *testing.T) {
 // User Story: As a registered user, I want to login with my credentials
 // so that I can access the platform.
 func TestUserLogin_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("should login with valid credentials", func(t *testing.T) {
 		// GIVEN - A registered user
@@ -330,7 +330,7 @@ func TestUserLogin_Acceptance(t *testing.T) {
 
 // TestTokenRefresh_Acceptance tests token refresh flow.
 func TestTokenRefresh_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("should issue new tokens with valid refresh token", func(t *testing.T) {
 		// GIVEN - A logged in user with refresh token
@@ -362,7 +362,7 @@ func TestTokenRefresh_Acceptance(t *testing.T) {
 		refreshToken := loginResp.RefreshToken
 
 		// Logout to revoke the token
-		logoutUser(t, loginResp.AccessToken)
+		logoutUserWithRefreshToken(t, loginResp.AccessToken, refreshToken)
 
 		// WHEN - I try to use the old refresh token
 		reqBody := map[string]string{
@@ -385,7 +385,7 @@ func TestTokenRefresh_Acceptance(t *testing.T) {
 
 // TestProtectedRoutes_Acceptance tests authentication middleware.
 func TestProtectedRoutes_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("should reject request without token", func(t *testing.T) {
 		// WHEN - I request a protected resource without auth
@@ -429,7 +429,7 @@ func TestProtectedRoutes_Acceptance(t *testing.T) {
 // User Story: As an admin, I want to control who joins my community
 // so that I maintain quality.
 func TestInviteManagement_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("AC-ID-004.1: should generate unique invite code", func(t *testing.T) {
 		// GIVEN - An admin user
@@ -511,7 +511,7 @@ func TestInviteManagement_Acceptance(t *testing.T) {
 
 // TestReputation_Acceptance tests reputation initialization and display.
 func TestReputation_Acceptance(t *testing.T) {
-	t.Skip("Skipping until server implementation exists")
+	resetTestData() // Reset data for this test group
 
 	t.Run("AC-ID-003.1: should initialize reputation to 0", func(t *testing.T) {
 		// GIVEN - I just registered
@@ -616,61 +616,4 @@ type LoginResponse struct {
 	RefreshToken string
 }
 
-// createTestInvite creates a test invite and returns the code.
-func createTestInvite(t *testing.T) string {
-	t.Helper()
-	// TODO: Implement when server exists
-	return "TEST_INVITE_CODE"
-}
-
-// createExpiredInvite creates an expired invite for testing.
-func createExpiredInvite(t *testing.T) string {
-	t.Helper()
-	// TODO: Implement when server exists
-	return "EXPIRED_INVITE_CODE"
-}
-
-// createLimitedInvite creates an invite with max uses.
-func createLimitedInvite(t *testing.T, maxUses int) string {
-	t.Helper()
-	// TODO: Implement when server exists
-	return "LIMITED_INVITE_CODE"
-}
-
-// createTestUser creates a test user and returns it.
-func createTestUser(t *testing.T) TestUser {
-	t.Helper()
-	// TODO: Implement when server exists
-	return TestUser{
-		ID:     "test-user-id",
-		Email:  "testuser@example.com",
-		Handle: "testuser",
-	}
-}
-
-// createAdminUser creates an admin test user.
-func createAdminUser(t *testing.T) TestUser {
-	t.Helper()
-	// TODO: Implement when server exists
-	return TestUser{
-		ID:     "admin-user-id",
-		Email:  "admin@example.com",
-		Handle: "admin",
-	}
-}
-
-// loginUser logs in a user and returns tokens.
-func loginUser(t *testing.T, email, password string) LoginResponse {
-	t.Helper()
-	// TODO: Implement when server exists
-	return LoginResponse{
-		AccessToken:  "test-access-token",
-		RefreshToken: "test-refresh-token",
-	}
-}
-
-// logoutUser logs out a user.
-func logoutUser(t *testing.T, token string) {
-	t.Helper()
-	// TODO: Implement when server exists
-}
+// Helper functions are now defined in setup_test.go

@@ -6,6 +6,7 @@
 
 ## Current Phase: build (Phase 1 COMPLETE)
 
+**Current Task:** None - Phase 1 Complete
 **Next Phase:** Phase 2 - Core Messaging (Chat Service)
 
 ---
@@ -14,14 +15,14 @@
 
 | Phase | Name | Status | Tasks |
 |-------|------|--------|-------|
-| 1 | Foundation - Identity Service | ✅ COMPLETE | 12 |
+| 1 | Foundation - Identity Service | ✅ COMPLETE | 13 |
 | 2 | Core Messaging - Chat Service | Pending | 14 |
 | 3 | Knowledge Layer | Pending | 12 |
 | 4 | Echo Bot | Pending | 6 |
 | 5 | Governance & Token | Pending | 10 |
 
-**Total Tasks:** 54
-**Total Test Cases:** 162
+**Total Tasks:** 55
+**Total Test Cases:** 169
 
 ---
 
@@ -39,6 +40,7 @@
 - [x] Task 1.10: Invite Generation (completed 2025-12-29)
 - [x] Task 1.11: Invite Validation (completed 2025-12-29)
 - [x] Task 1.12: Reputation Initialization (completed 2025-12-29)
+- [x] Task 1.13: HTTP Handlers for Identity Service (completed 2026-01-04)
 
 ---
 
@@ -120,14 +122,20 @@
 | `chat_test.go` | 8 | US-CHAT-001, US-CHAT-002, US-CHAT-003, US-CHAT-004 |
 | **Total** | **15** | Phase 1-2 coverage |
 
-All tests currently skip with `t.Skip()` until server implementation exists.
+Identity acceptance tests now running (t.Skip() removed). Chat acceptance tests still skipped.
 
 ---
 
-## Last Updated: 2025-12-29 by /oss:build
+## Last Updated: 2026-01-08 by /oss:ship
 
 ## Build Statistics
-- **Phase 1 Tasks Completed:** 12/12
-- **Unit Tests Written:** 42
-- **Acceptance Tests:** 15
-- **Total Tests Passing:** 57
+- **Phase 1 Tasks Completed:** 13/13 (Phase 1 COMPLETE)
+- **Unit Tests Written:** 84 (74 original + 10 new security tests)
+- **Acceptance Tests:** 15 (7 identity tests now running, 8 chat tests skipped)
+- **Total Tests Passing:** 84+ (all unit + identity acceptance)
+
+## Security Fixes Applied (2026-01-08)
+- Applied rate limiting to login/register endpoints (P0)
+- Added community membership verification for invite creation (P1)
+- Fixed X-Forwarded-For header parsing (first IP only) (P1)
+- Added 10 new tests for rate limiting and IP extraction

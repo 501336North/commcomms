@@ -34,6 +34,7 @@ type Invite struct {
 
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
+	FindByID(ctx context.Context, id string) (*User, error)
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	FindByHandle(ctx context.Context, handle string) (*User, error)
 }
@@ -288,4 +289,13 @@ func (s *Service) RefreshTokens(ctx context.Context, refreshToken string) (*Auth
 	}
 
 	return &AuthResponse{AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
+}
+
+// GetUserByID retrieves a user by their ID.
+func (s *Service) GetUserByID(ctx context.Context, userID string) (*User, error) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
 }

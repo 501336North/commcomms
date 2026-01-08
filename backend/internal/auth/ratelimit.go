@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -106,13 +107,16 @@ func RateLimitMiddleware(limiter *RateLimiter, keyFunc func(*http.Request) strin
 func GetClientIP(r *http.Request) string {
 	// Check X-Forwarded-For first (for proxied requests)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP (original client)
-		return xff
+		// Take only the first IP (original client), trim spaces
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
 	}
 
 	// Check X-Real-IP
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		return strings.TrimSpace(xri)
 	}
 
 	// Fall back to remote address
