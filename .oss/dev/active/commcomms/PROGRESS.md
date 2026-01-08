@@ -126,10 +126,16 @@ Identity acceptance tests now running (t.Skip() removed). Chat acceptance tests 
 
 ---
 
-## Last Updated: 2026-01-04 by /oss:build
+## Last Updated: 2026-01-08 by /oss:ship
 
 ## Build Statistics
 - **Phase 1 Tasks Completed:** 13/13 (Phase 1 COMPLETE)
-- **Unit Tests Written:** 74 (42 original + 32 new handler tests)
+- **Unit Tests Written:** 84 (74 original + 10 new security tests)
 - **Acceptance Tests:** 15 (7 identity tests now running, 8 chat tests skipped)
-- **Total Tests Passing:** 74+ (all unit + identity acceptance)
+- **Total Tests Passing:** 84+ (all unit + identity acceptance)
+
+## Security Fixes Applied (2026-01-08)
+- Applied rate limiting to login/register endpoints (P0)
+- Added community membership verification for invite creation (P1)
+- Fixed X-Forwarded-For header parsing (first IP only) (P1)
+- Added 10 new tests for rate limiting and IP extraction
